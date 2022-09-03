@@ -1,6 +1,7 @@
 {
   "name": "bash-editor",
   "displayName": "bash-editor",
+  "publisher": "bra1ndump",
   "description": "",
   "version": "0.0.1",
   "repository": {
@@ -23,11 +24,10 @@
     "commands": [
       {
         "command": "bash-editor.newBashEditor",
-        "title": "New Bash Editor :D"
+        "title": "Bash Editor: Open new"
       }
     ]
   },
-  "publisher": "bra1ndump",
   "author": {
     "name": "Kirill Dubovitskiy",
     "email": "kirill2003de@gmail.com"
