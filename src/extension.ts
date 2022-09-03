@@ -148,15 +148,19 @@ export function activate(context: ExtensionContext) {
                 return;
               }
 
-              let { stdout, stdin, stderr } = spawn(comamnd, args, {
-                stdio: ["pipe", "pipe", "pipe"],
-              });
-
+              // This remains very racy, ideally will want to chain these promises
+              // to keep the order of edits and to wait for all promises
               let editPromise: Thenable<boolean> | null = null;
-              stdout.addListener("data", async (chunk: Buffer) => {
+              async function pipeCommandOutputToEditor(chunk: any) {
+                let commandOutput = "";
+                if (chunk instanceof Buffer) {
+                  commandOutput = chunk.toString("utf-8");
+                } else {
+                  throw Error("Command produced unexpected output type");
+                }
+
                 state = { kind: "WritingOutput" };
 
-                const commandOutput = chunk.toString("utf-8");
                 const end = getDocumentEnd(bashDocument);
 
                 editPromise = editor.edit((builder) => {
@@ -167,7 +171,19 @@ export function activate(context: ExtensionContext) {
                 assert(success);
 
                 state = { kind: "InteractiveInput" };
-              });
+              }
+
+              let { stdin, stdout, stderr, addListener } = spawn(
+                comamnd,
+                args,
+                {
+                  shell: true,
+                  stdio: ["pipe", "pipe", "pipe"],
+                }
+              );
+
+              stdout.addListener("data", pipeCommandOutputToEditor);
+              stderr.addListener("data", pipeCommandOutputToEditor);
 
               stdout.addListener("close", async () => {
                 if (editPromise) {
@@ -176,6 +192,7 @@ export function activate(context: ExtensionContext) {
 
                 await resetPrompt();
               });
+
               break;
             case "WritingOutput":
               // Noop, just ignore updates
