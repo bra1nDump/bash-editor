@@ -12,9 +12,10 @@ import {
 } from "vscode";
 import { exec, spawn } from "child_process";
 import { PassThrough, Readable, Stream, Writable } from "stream";
-import { cwd, stdout } from "process";
+import { cwd, env, stdout } from "process";
 import { assert } from "console";
-import path = require("path");
+import * as path from "path";
+import { homedir } from "os";
 
 /**
  * Get a range that corresponds to the entire contents of the given document.
@@ -53,7 +54,7 @@ export function activate(context: ExtensionContext) {
     "bash-editor.newBashEditor",
     async () => {
       // Current directory and prompt
-      let directory = cwd();
+      let directory = homedir();
 
       function getCurrentPrompt(): string {
         return `${directory} 🛫 `;
@@ -86,14 +87,30 @@ export function activate(context: ExtensionContext) {
         commandStart: getDocumentEnd(bashDocument),
       };
 
-      async function resetPrompt() {
+      async function resetPrompt(retries = 1) {
+        if (retries <= 0) {
+          return;
+        }
+
+        // This is not representative of what we're actually doing,
+        // but is good enough because it will ignore editor updates.
+        state = { kind: "WritingOutput" };
+
         const end = getDocumentEnd(bashDocument);
         const success = await editor.edit((builder) => {
-          builder.insert(end, "\n" + getCurrentPrompt());
+          const { start, end } = getDocumentRange(bashDocument);
+          const startOnNewLine = !start.isEqual(end);
+          builder.insert(
+            end,
+            (startOnNewLine ? "\n" : "") + getCurrentPrompt()
+          );
         });
         revealTail();
 
-        assert(success);
+        assert(success, "Resetting comment prompt failed, retrying");
+        if (!success) {
+          setTimeout(() => resetPrompt(retries - 1));
+        }
 
         state = {
           kind: "ReadingCommand",
@@ -116,21 +133,43 @@ export function activate(context: ExtensionContext) {
 
           switch (state.kind) {
             case "ReadingCommand":
-              // Make sure we don't mess up the position start.
-              const validCommandRange = new Range(
-                state.commandStart,
-                documentEnd
+              let { commandStart } = state;
+              const promptRange = new Range(
+                commandStart.with({ character: 0 }),
+                commandStart
               );
-              contentChanges.forEach((change) =>
-                assert(
-                  typeof change.range.intersection(validCommandRange) !==
-                    "undefined",
-                  "Changes were done outside of the command editing area - between 🛫 and end of file"
+              // Potential comment position start changes:
+              // 1. Command prompt was touched in some way, moved around etc.
+              //   In this case we we reset the prompt.
+              // 2. All changes happened either before or after command prompt range.
+              //   In this case was shift command start position
+              //   according to changes that happened before.
+              if (
+                contentChanges.some((change) =>
+                  change.range.contains(promptRange)
                 )
-              );
+              ) {
+                resetPrompt();
+                return;
+              } else {
+                const commandStartOffset = document.offsetAt(commandStart);
+                const changesBeforeCommandStart = contentChanges.filter(
+                  (change) => change.rangeOffset < commandStartOffset
+                );
+                const newCommandStartOffset = changesBeforeCommandStart.reduce(
+                  (currentOffset, change) =>
+                    currentOffset - change.rangeLength + change.text.length,
+                  commandStartOffset
+                );
+                commandStart = document.positionAt(newCommandStartOffset);
+                state = {
+                  kind: "ReadingCommand",
+                  commandStart,
+                };
+              }
 
               const command = document.getText(
-                new Range(state.commandStart, documentEnd)
+                new Range(commandStart, documentEnd)
               );
               const singleLineCommand = command.replace("\\\n", " ");
 
@@ -144,6 +183,11 @@ export function activate(context: ExtensionContext) {
               // We handled those natively.
               if (comamnd === "cd") {
                 changeDirectory(args);
+                resetPrompt();
+                return;
+              }
+
+              if (comamnd === "") {
                 resetPrompt();
                 return;
               }
@@ -168,7 +212,7 @@ export function activate(context: ExtensionContext) {
                 });
 
                 const success = await editPromise;
-                assert(success);
+                assert(success, "Command output writing failed");
 
                 state = { kind: "InteractiveInput" };
               }
@@ -211,6 +255,13 @@ export function activate(context: ExtensionContext) {
   );
 
   context.subscriptions.push(disposable);
+
+  if (env.VSCODE_EXT_HOST_DEBUG_PORT) {
+    setTimeout(
+      () => commands.executeCommand("bash-editor.newBashEditor"),
+      1000
+    );
+  }
 }
 
 // this method is called when your extension is deactivated
