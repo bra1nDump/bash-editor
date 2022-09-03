@@ -8,11 +8,13 @@ import {
   TextDocument,
   ExtensionContext,
   Position,
+  Selection,
 } from "vscode";
 import { exec, spawn } from "child_process";
-import { Readable, Stream, Writable } from "stream";
+import { PassThrough, Readable, Stream, Writable } from "stream";
 import { cwd, stdout } from "process";
 import { assert } from "console";
+import path = require("path");
 
 /**
  * Get a range that corresponds to the entire contents of the given document.
@@ -50,18 +52,23 @@ export function activate(context: ExtensionContext) {
   let disposable = commands.registerCommand(
     "bash-editor.newBashEditor",
     async () => {
-      let currentWorkingDirectory = cwd();
+      let directory = cwd();
 
       function getCurrentPrompt(): string {
-        return `${currentWorkingDirectory} 🛫 `;
+        return `${directory} 🛫 `;
       }
 
-      // Consider: Instead of keeping track of the current directory internally
-      // I can span a bash process, keep it alive throughout the session,
-      // and send input to it, this way I don't have to re implement cd, env etc.
-      // To get the current prompt I can query bash by running a command
-      // and not piping its output to the editor.
-      function changeCurrentDirectory() {}
+      function changeDirectory(args: string[]) {
+        assert(args.length === 1);
+        const destination = args[0];
+        if (destination.startsWith("~")) {
+          directory = path.resolve(destination);
+        } else if (path.isAbsolute(destination)) {
+          directory = destination;
+        } else {
+          directory = path.join(directory, destination);
+        }
+      }
 
       // The code you place here will be executed every time your command is executed
       // Display a message box to the user
@@ -70,11 +77,27 @@ export function activate(context: ExtensionContext) {
         content: getCurrentPrompt(),
       });
       const editor = await window.showTextDocument(bashDocument);
+      const end = getDocumentEnd(bashDocument);
+      editor.selection = new Selection(end, end);
 
       let state: State = {
         kind: "ReadingCommand",
         commandStart: getDocumentEnd(bashDocument),
       };
+
+      async function resetPrompt() {
+        const end = getDocumentEnd(bashDocument);
+        const success = await editor.edit((builder) => {
+          builder.insert(end, "\n" + getCurrentPrompt());
+        });
+
+        assert(success);
+
+        state = {
+          kind: "ReadingCommand",
+          commandStart: getDocumentEnd(bashDocument),
+        };
+      }
 
       let textDocumentChangesDisposable = workspace.onDidChangeTextDocument(
         ({ document, contentChanges }) => {
@@ -110,6 +133,14 @@ export function activate(context: ExtensionContext) {
               }
 
               let [comamnd, ...args] = singleLineCommand.trimEnd().split(" ");
+              // Escape hatch for special commands like change directory.
+              // We handled those natively.
+              if (comamnd === "cd") {
+                changeDirectory(args);
+                resetPrompt();
+                return;
+              }
+
               let { stdout, stdin, stderr } = spawn(comamnd, args, {
                 stdio: ["pipe", "pipe", "pipe"],
               });
@@ -136,17 +167,7 @@ export function activate(context: ExtensionContext) {
                   await editPromise;
                 }
 
-                const end = getDocumentEnd(bashDocument);
-                const success = await editor.edit((builder) => {
-                  builder.insert(end, "\n" + getCurrentPrompt());
-                });
-
-                assert(success);
-
-                state = {
-                  kind: "ReadingCommand",
-                  commandStart: getDocumentEnd(bashDocument),
-                };
+                await resetPrompt();
               });
               break;
             case "WritingOutput":
