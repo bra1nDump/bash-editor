@@ -52,6 +52,7 @@ export function activate(context: ExtensionContext) {
   let disposable = commands.registerCommand(
     "bash-editor.newBashEditor",
     async () => {
+      // Current directory and prompt
       let directory = cwd();
 
       function getCurrentPrompt(): string {
@@ -90,6 +91,7 @@ export function activate(context: ExtensionContext) {
         const success = await editor.edit((builder) => {
           builder.insert(end, "\n" + getCurrentPrompt());
         });
+        revealTail();
 
         assert(success);
 
@@ -97,6 +99,11 @@ export function activate(context: ExtensionContext) {
           kind: "ReadingCommand",
           commandStart: getDocumentEnd(bashDocument),
         };
+      }
+
+      function revealTail() {
+        const end = getDocumentEnd(bashDocument);
+        editor.revealRange(new Range(end, end));
       }
 
       let textDocumentChangesDisposable = workspace.onDidChangeTextDocument(
@@ -177,6 +184,8 @@ export function activate(context: ExtensionContext) {
             case "InteractiveInput":
             // Send to stdin
           }
+
+          revealTail();
         }
       );
 
