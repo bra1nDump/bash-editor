@@ -9,10 +9,10 @@ import {
   ExtensionContext,
   Position,
 } from "vscode";
-import { exec, spawn } from "node:child_process";
-import { Readable, Stream, Writable } from "node:stream";
-import { cwd, stdout } from "node:process";
-import { assert } from "node:console";
+import { exec, spawn } from "child_process";
+import { Readable, Stream, Writable } from "stream";
+import { cwd, stdout } from "process";
+import { assert } from "console";
 
 /**
  * Get a range that corresponds to the entire contents of the given document.
