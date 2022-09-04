@@ -16,13 +16,18 @@ Bash Editor: Open new
 - Keep the tail of the terminal always visible
 
 ## Not impelemented
-- [Essential, medium] Autocomplete
+🥼 - Effort units
+📈 - Impact
+
+- [🥼🥼 📈📈📈] Autocomplete
   - Old commands (also does not append to bash history)
   - Directories
 - Interactive
-  - [Easy, not needed rn] Input. If a script requires further input midway of execution - it will simply hang
-  - [Bind custom command, good to have] Interrupt. Control-C will not halt the program
-- [High effort, low impact] Any terminal control like coloring output, clearning lines
-
-## Potentially desired features
--
+  - [🥼 📈] Input. If a script requires further input midway of execution - it will simply hang
+  - [🥼 📈📈] Interrupt. Control-C will not halt the program. Impossible to intercept keystrokes, can bind a command
+- [🥼🥼🥼🥼 📈] Any terminal control like coloring output, clearning lines
+- [🥼 📈📈] Visual appeal, usability
+  - Initialized with markdown and prefix command prompts with # for easier folding
+  - Other things like wrapping command that has ran in `backticks`
+- [🥼🥼 📈📈] Debugger integration
+  - The reason I started this in the first place was because lldb was terrible to use from a small single line debugging input field. I can basically swap out `spawn` command with `commands.run('lldb-extension.runCommand')`, and similarly get three streams in return.
