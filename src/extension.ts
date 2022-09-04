@@ -68,7 +68,7 @@ export function activate(context: ExtensionContext) {
         assert(args.length === 1);
         const destination = args[0];
         if (destination.startsWith("~")) {
-          directory = homedir();
+          directory = path.join(homedir(), destination.slice(1));
         } else if (path.isAbsolute(destination)) {
           directory = destination;
         } else {
@@ -238,6 +238,7 @@ export function activate(context: ExtensionContext) {
                 args,
                 {
                   shell: true,
+                  cwd: directory,
                   stdio: ["pipe", "pipe", "pipe"],
                 }
               );
