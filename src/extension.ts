@@ -23,20 +23,24 @@ import { homedir } from "os";
  * @param document The document to consider
  * @returns A range corresponding to the entire document contents
  */
-function getDocumentRange(document: TextDocument) {
+function getRange(document: TextDocument) {
   const firstLine = document.lineAt(0);
   const lastLine = document.lineAt(document.lineCount - 1);
 
   return new Range(firstLine.range.start, lastLine.range.end);
 }
 
-function getDocumentEnd(document: TextDocument) {
-  return getDocumentRange(document).end;
+function getEnd(document: TextDocument) {
+  return getRange(document).end;
+}
+
+function getEndOffset(document: TextDocument) {
+  return document.offsetAt(getEnd(document));
 }
 
 type ReadingCommand = {
   kind: "ReadingCommand";
-  commandStart: Position;
+  commandStartOffset: number;
 };
 
 type WritingOutput = {
@@ -64,7 +68,7 @@ export function activate(context: ExtensionContext) {
         assert(args.length === 1);
         const destination = args[0];
         if (destination.startsWith("~")) {
-          directory = path.resolve(destination);
+          directory = homedir();
         } else if (path.isAbsolute(destination)) {
           directory = destination;
         } else {
@@ -79,15 +83,17 @@ export function activate(context: ExtensionContext) {
         content: getCurrentPrompt(),
       });
       const editor = await window.showTextDocument(bashDocument);
-      const end = getDocumentEnd(bashDocument);
+      const end = getEnd(bashDocument);
+      const endOffset = getEndOffset(bashDocument);
       editor.selection = new Selection(end, end);
 
       let state: State = {
         kind: "ReadingCommand",
-        commandStart: getDocumentEnd(bashDocument),
+        commandStartOffset: endOffset,
       };
 
       async function resetPrompt(retries = 1) {
+        console.log("resetPrompt");
         if (retries <= 0) {
           return;
         }
@@ -96,9 +102,9 @@ export function activate(context: ExtensionContext) {
         // but is good enough because it will ignore editor updates.
         state = { kind: "WritingOutput" };
 
-        const end = getDocumentEnd(bashDocument);
+        const end = getEnd(bashDocument);
         const success = await editor.edit((builder) => {
-          const { start, end } = getDocumentRange(bashDocument);
+          const { start, end } = getRange(bashDocument);
           const startOnNewLine = !start.isEqual(end);
           builder.insert(
             end,
@@ -114,29 +120,31 @@ export function activate(context: ExtensionContext) {
 
         state = {
           kind: "ReadingCommand",
-          commandStart: getDocumentEnd(bashDocument),
+          commandStartOffset: getEndOffset(bashDocument),
         };
       }
 
       function revealTail() {
-        const end = getDocumentEnd(bashDocument);
+        const end = getEnd(bashDocument);
         editor.revealRange(new Range(end, end));
       }
 
-      let textDocumentChangesDisposable = workspace.onDidChangeTextDocument(
+      const textDocumentChangesDisposable = workspace.onDidChangeTextDocument(
         ({ document, contentChanges }) => {
           if (document !== bashDocument) {
             return;
           }
 
-          const documentEnd = getDocumentEnd(document);
+          const documentEnd = getEnd(document);
 
           switch (state.kind) {
             case "ReadingCommand":
-              let { commandStart } = state;
+              let { commandStartOffset } = state;
+              let commandStartPosition =
+                document.positionAt(commandStartOffset);
               const promptRange = new Range(
-                commandStart.with({ character: 0 }),
-                commandStart
+                commandStartPosition.with({ character: 0 }),
+                commandStartPosition.translate({ characterDelta: -1 })
               );
               // Potential comment position start changes:
               // 1. Command prompt was touched in some way, moved around etc.
@@ -145,14 +153,15 @@ export function activate(context: ExtensionContext) {
               //   In this case was shift command start position
               //   according to changes that happened before.
               if (
-                contentChanges.some((change) =>
-                  change.range.contains(promptRange)
+                contentChanges.some(
+                  (change) =>
+                    typeof change.range.intersection(promptRange) !==
+                    "undefined"
                 )
               ) {
                 resetPrompt();
                 return;
               } else {
-                const commandStartOffset = document.offsetAt(commandStart);
                 const changesBeforeCommandStart = contentChanges.filter(
                   (change) => change.rangeOffset < commandStartOffset
                 );
@@ -161,17 +170,24 @@ export function activate(context: ExtensionContext) {
                     currentOffset - change.rangeLength + change.text.length,
                   commandStartOffset
                 );
-                commandStart = document.positionAt(newCommandStartOffset);
+                console.log(
+                  `Old command start offset ${commandStartOffset}, new ${newCommandStartOffset}`
+                );
+                commandStartOffset = newCommandStartOffset;
+                commandStartPosition = document.positionAt(commandStartOffset);
                 state = {
                   kind: "ReadingCommand",
-                  commandStart,
+                  commandStartOffset,
                 };
               }
 
-              const command = document.getText(
-                new Range(commandStart, documentEnd)
-              );
+              const commandRange = new Range(commandStartPosition, documentEnd);
+              const command = document.getText(commandRange);
               const singleLineCommand = command.replace("\\\n", " ");
+
+              console.log("commandRange");
+              console.log(commandRange.start);
+              console.log(`command ${command}`);
 
               if (!singleLineCommand.endsWith("\n")) {
                 // We are not done entering the command yet
@@ -205,7 +221,7 @@ export function activate(context: ExtensionContext) {
 
                 state = { kind: "WritingOutput" };
 
-                const end = getDocumentEnd(bashDocument);
+                const end = getEnd(bashDocument);
 
                 editPromise = editor.edit((builder) => {
                   builder.insert(end, commandOutput);
