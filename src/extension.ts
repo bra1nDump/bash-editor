@@ -16,6 +16,7 @@ import { cwd, env, stdout } from "process";
 import { assert } from "console";
 import * as path from "path";
 import { homedir } from "os";
+import { fstat } from "fs";
 
 /**
  * Get a range that corresponds to the entire contents of the given document.
@@ -58,6 +59,7 @@ export function activate(context: ExtensionContext) {
     "bash-editor.newBashEditor",
     async () => {
       // Current directory and prompt
+      // TODO: Start with current file directory / workspace / homedir
       let directory = homedir();
 
       function getCurrentPrompt(): string {
@@ -74,6 +76,8 @@ export function activate(context: ExtensionContext) {
         } else {
           directory = path.join(directory, destination);
         }
+
+        // TODO: Check new directory exists
       }
 
       // The code you place here will be executed every time your command is executed
@@ -136,6 +140,9 @@ export function activate(context: ExtensionContext) {
           }
 
           const documentEnd = getEnd(document);
+
+          const executeCommand = commands.executeCommand;
+          console.log(executeCommand);
 
           switch (state.kind) {
             case "ReadingCommand":
@@ -210,22 +217,28 @@ export function activate(context: ExtensionContext) {
 
               // This remains very racy, ideally will want to chain these promises
               // to keep the order of edits and to wait for all promises
-              let editPromise: Thenable<boolean> | null = null;
-              async function pipeCommandOutputToEditor(chunk: any) {
-                let commandOutput = "";
+              let editPromise: Thenable<boolean> | undefined = undefined;
+              async function pipeChunkToEditor(chunk: any) {
                 if (chunk instanceof Buffer) {
-                  commandOutput = chunk.toString("utf-8");
+                  writeToEditor(chunk.toString("utf-8"));
                 } else {
                   throw Error("Command produced unexpected output type");
                 }
-
+              }
+              async function writeToEditor(commandOutput: string) {
                 state = { kind: "WritingOutput" };
 
                 const end = getEnd(bashDocument);
 
-                editPromise = editor.edit((builder) => {
+                // Chain edits to avoid output race conditions
+                const newEditPromise = editor.edit((builder) => {
                   builder.insert(end, commandOutput);
                 });
+                // Somehow the chaining breaks things saying it cant edit an editor that is closed ?..
+                // if (editPromise) {
+                //   editPromise = editPromise.then((_) => newEditPromise);
+                // }
+                editPromise = newEditPromise;
 
                 const success = await editPromise;
                 assert(success, "Command output writing failed");
@@ -233,26 +246,34 @@ export function activate(context: ExtensionContext) {
                 state = { kind: "InteractiveInput" };
               }
 
-              let { stdin, stdout, stderr, addListener } = spawn(
-                comamnd,
-                args,
-                {
+              // TODO: Depending on bash / lldb mode spawn or call in command.run('lldb...', command, args)
+              if (false) {
+                const { stdout, stderr } = spawn(comamnd, args, {
                   shell: true,
                   cwd: directory,
                   stdio: ["pipe", "pipe", "pipe"],
-                }
-              );
+                });
 
-              stdout.addListener("data", pipeCommandOutputToEditor);
-              stderr.addListener("data", pipeCommandOutputToEditor);
+                stdout.addListener("data", pipeChunkToEditor);
+                stderr.addListener("data", pipeChunkToEditor);
 
-              stdout.addListener("close", async () => {
-                if (editPromise) {
-                  await editPromise;
-                }
+                stdout.addListener("close", async () => {
+                  if (editPromise) {
+                    await editPromise;
+                  }
 
-                await resetPrompt();
-              });
+                  await resetPrompt();
+                });
+              } else {
+                const lldbCommand = [command, ...args].join(" ").trimEnd();
+                commands
+                  .executeCommand<string>(
+                    "fb-lldb.script-bridge.runLLDBCommandReturnResult",
+                    lldbCommand
+                  )
+                  .then(writeToEditor, (error) => console.log(error))
+                  .then((_) => resetPrompt());
+              }
 
               break;
             case "WritingOutput":
@@ -273,7 +294,7 @@ export function activate(context: ExtensionContext) {
 
   context.subscriptions.push(disposable);
 
-  if (env.VSCODE_EXT_HOST_DEBUG_PORT) {
+  if (env.NODE_ENV === "development") {
     setTimeout(
       () => commands.executeCommand("bash-editor.newBashEditor"),
       1000

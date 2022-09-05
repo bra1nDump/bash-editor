@@ -26,6 +26,7 @@ Bash Editor: Open new
   - [🥼 📈] Input. If a script requires further input midway of execution - it will simply hang
   - [🥼 📈📈] Interrupt. Control-C will not halt the program. Impossible to intercept keystrokes, can bind a command
 - [🥼🥼🥼🥼 📈] Any terminal control like coloring output, clearning lines
+  - This might be a deal breaker because buck for example seems to want to have an interactive terminal. Maybe if it cant detect a TTY to which its connected it just craps out 😢
 - [🥼 📈📈] Visual appeal, usability
   - Initialized with markdown and prefix command prompts with # for easier folding
   - Other things like wrapping command that has ran in `backticks`
