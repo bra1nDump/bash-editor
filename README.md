@@ -10,12 +10,12 @@ I use voice control to code half the time to relieve stress from my hands. It is
 ## Try it - from command pallet run
 Bash Editor: Open new
 
-## Features
+## Implemented
 - Run bash commands within a regular editor (tab) in vscode
 - No third party dependencies - vscode + node apis only
 - Keep the tail of the terminal always visible
 
-## Not impelemented
+## Maybe todo? ;D
 🥼 - Effort units
 📈 - Impact
 
@@ -32,3 +32,7 @@ Bash Editor: Open new
   - Other things like wrapping command that has ran in `backticks`
 - [🥼🥼 📈📈] Debugger integration
   - The reason I started this in the first place was because lldb was terrible to use from a small single line debugging input field. I can basically swap out `spawn` command with `commands.run('lldb-extension.runCommand')`, and similarly get three streams in return.
+- [🥼🥼 📈📈] Refactor
+  - Flatten the god function
+  - Starting hard to read
+  - Need to add a separate command for lldb / bash

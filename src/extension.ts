@@ -54,245 +54,247 @@ type InteractiveInput = {
 
 type State = ReadingCommand | WritingOutput | InteractiveInput;
 
-export function activate(context: ExtensionContext) {
-  let disposable = commands.registerCommand(
-    "bash-editor.newBashEditor",
-    async () => {
-      // Current directory and prompt
-      // TODO: Start with current file directory / workspace / homedir
-      let directory = homedir();
+async function run(lldbMode: boolean) {
+  // Current directory and prompt
+  // TODO: Start with current file directory / workspace / homedir
+  let directory = homedir();
 
-      function getCurrentPrompt(): string {
-        return `${directory} 🛫 `;
+  function getCurrentPrompt(): string {
+    return `${directory} 🛫 `;
+  }
+
+  function changeDirectory(args: string[]) {
+    assert(args.length === 1);
+    const destination = args[0];
+    if (destination.startsWith("~")) {
+      directory = path.join(homedir(), destination.slice(1));
+    } else if (path.isAbsolute(destination)) {
+      directory = destination;
+    } else {
+      directory = path.join(directory, destination);
+    }
+
+    // TODO: Check new directory exists
+  }
+
+  // The code you place here will be executed every time your command is executed
+  // Display a message box to the user
+  const bashDocument = await workspace.openTextDocument({
+    language: "bash",
+    content: getCurrentPrompt(),
+  });
+  const editor = await window.showTextDocument(bashDocument);
+  const end = getEnd(bashDocument);
+  const endOffset = getEndOffset(bashDocument);
+  editor.selection = new Selection(end, end);
+
+  let scriptBridgeConnected = false;
+  let state: State = {
+    kind: "ReadingCommand",
+    commandStartOffset: endOffset,
+  };
+
+  async function resetPrompt(retries = 1) {
+    if (retries <= 0) {
+      return;
+    }
+
+    // This is not representative of what we're actually doing,
+    // but is good enough because it will ignore editor updates.
+    state = { kind: "WritingOutput" };
+
+    const success = await editor.edit((builder) => {
+      const { start, end } = getRange(bashDocument);
+      const startOnNewLine = !start.isEqual(end);
+      builder.insert(end, (startOnNewLine ? "\n" : "") + getCurrentPrompt());
+    });
+    revealTail();
+
+    assert(success, "Resetting comment prompt failed, retrying");
+    if (!success) {
+      setTimeout(() => resetPrompt(retries - 1));
+    }
+
+    state = {
+      kind: "ReadingCommand",
+      commandStartOffset: getEndOffset(bashDocument),
+    };
+  }
+
+  function revealTail() {
+    const end = getEnd(bashDocument);
+    editor.revealRange(new Range(end, end));
+  }
+
+  const textDocumentChangesDisposable = workspace.onDidChangeTextDocument(
+    ({ document, contentChanges }) => {
+      if (document !== bashDocument) {
+        return;
       }
 
-      function changeDirectory(args: string[]) {
-        assert(args.length === 1);
-        const destination = args[0];
-        if (destination.startsWith("~")) {
-          directory = path.join(homedir(), destination.slice(1));
-        } else if (path.isAbsolute(destination)) {
-          directory = destination;
-        } else {
-          directory = path.join(directory, destination);
-        }
+      const documentEnd = getEnd(document);
 
-        // TODO: Check new directory exists
-      }
+      const executeCommand = commands.executeCommand;
+      console.log(executeCommand);
 
-      // The code you place here will be executed every time your command is executed
-      // Display a message box to the user
-      const bashDocument = await workspace.openTextDocument({
-        language: "bash",
-        content: getCurrentPrompt(),
-      });
-      const editor = await window.showTextDocument(bashDocument);
-      const end = getEnd(bashDocument);
-      const endOffset = getEndOffset(bashDocument);
-      editor.selection = new Selection(end, end);
-
-      let state: State = {
-        kind: "ReadingCommand",
-        commandStartOffset: endOffset,
-      };
-
-      async function resetPrompt(retries = 1) {
-        console.log("resetPrompt");
-        if (retries <= 0) {
-          return;
-        }
-
-        // This is not representative of what we're actually doing,
-        // but is good enough because it will ignore editor updates.
-        state = { kind: "WritingOutput" };
-
-        const end = getEnd(bashDocument);
-        const success = await editor.edit((builder) => {
-          const { start, end } = getRange(bashDocument);
-          const startOnNewLine = !start.isEqual(end);
-          builder.insert(
-            end,
-            (startOnNewLine ? "\n" : "") + getCurrentPrompt()
+      switch (state.kind) {
+        case "ReadingCommand":
+          let { commandStartOffset } = state;
+          let commandStartPosition = document.positionAt(commandStartOffset);
+          const promptRange = new Range(
+            commandStartPosition.with({ character: 0 }),
+            commandStartPosition.translate({ characterDelta: -1 })
           );
-        });
-        revealTail();
+          // Potential comment position start changes:
+          // 1. Command prompt was touched in some way, moved around etc.
+          //   In this case we we reset the prompt.
+          // 2. All changes happened either before or after command prompt range.
+          //   In this case was shift command start position
+          //   according to changes that happened before.
+          if (
+            contentChanges.some(
+              (change) =>
+                typeof change.range.intersection(promptRange) !== "undefined"
+            )
+          ) {
+            resetPrompt();
+            return;
+          } else {
+            const changesBeforeCommandStart = contentChanges.filter(
+              (change) => change.rangeOffset < commandStartOffset
+            );
+            const newCommandStartOffset = changesBeforeCommandStart.reduce(
+              (currentOffset, change) =>
+                currentOffset - change.rangeLength + change.text.length,
+              commandStartOffset
+            );
+            console.log(
+              `Old command start offset ${commandStartOffset}, new ${newCommandStartOffset}`
+            );
+            commandStartOffset = newCommandStartOffset;
+            commandStartPosition = document.positionAt(commandStartOffset);
+            state = {
+              kind: "ReadingCommand",
+              commandStartOffset,
+            };
+          }
 
-        assert(success, "Resetting comment prompt failed, retrying");
-        if (!success) {
-          setTimeout(() => resetPrompt(retries - 1));
-        }
+          const commandRange = new Range(commandStartPosition, documentEnd);
+          const command = document.getText(commandRange);
+          const singleLineCommand = command.replace("\\\n", " ");
 
-        state = {
-          kind: "ReadingCommand",
-          commandStartOffset: getEndOffset(bashDocument),
-        };
-      }
+          console.log("commandRange");
+          console.log(commandRange.start);
+          console.log(`command ${command}`);
 
-      function revealTail() {
-        const end = getEnd(bashDocument);
-        editor.revealRange(new Range(end, end));
-      }
-
-      const textDocumentChangesDisposable = workspace.onDidChangeTextDocument(
-        ({ document, contentChanges }) => {
-          if (document !== bashDocument) {
+          if (!singleLineCommand.endsWith("\n")) {
+            // We are not done entering the command yet
             return;
           }
 
-          const documentEnd = getEnd(document);
-
-          const executeCommand = commands.executeCommand;
-          console.log(executeCommand);
-
-          switch (state.kind) {
-            case "ReadingCommand":
-              let { commandStartOffset } = state;
-              let commandStartPosition =
-                document.positionAt(commandStartOffset);
-              const promptRange = new Range(
-                commandStartPosition.with({ character: 0 }),
-                commandStartPosition.translate({ characterDelta: -1 })
-              );
-              // Potential comment position start changes:
-              // 1. Command prompt was touched in some way, moved around etc.
-              //   In this case we we reset the prompt.
-              // 2. All changes happened either before or after command prompt range.
-              //   In this case was shift command start position
-              //   according to changes that happened before.
-              if (
-                contentChanges.some(
-                  (change) =>
-                    typeof change.range.intersection(promptRange) !==
-                    "undefined"
-                )
-              ) {
-                resetPrompt();
-                return;
-              } else {
-                const changesBeforeCommandStart = contentChanges.filter(
-                  (change) => change.rangeOffset < commandStartOffset
-                );
-                const newCommandStartOffset = changesBeforeCommandStart.reduce(
-                  (currentOffset, change) =>
-                    currentOffset - change.rangeLength + change.text.length,
-                  commandStartOffset
-                );
-                console.log(
-                  `Old command start offset ${commandStartOffset}, new ${newCommandStartOffset}`
-                );
-                commandStartOffset = newCommandStartOffset;
-                commandStartPosition = document.positionAt(commandStartOffset);
-                state = {
-                  kind: "ReadingCommand",
-                  commandStartOffset,
-                };
-              }
-
-              const commandRange = new Range(commandStartPosition, documentEnd);
-              const command = document.getText(commandRange);
-              const singleLineCommand = command.replace("\\\n", " ");
-
-              console.log("commandRange");
-              console.log(commandRange.start);
-              console.log(`command ${command}`);
-
-              if (!singleLineCommand.endsWith("\n")) {
-                // We are not done entering the command yet
-                return;
-              }
-
-              let [comamnd, ...args] = singleLineCommand.trimEnd().split(" ");
-              // Escape hatch for special commands like change directory.
-              // We handled those natively.
-              if (comamnd === "cd") {
-                changeDirectory(args);
-                resetPrompt();
-                return;
-              }
-
-              if (comamnd === "") {
-                resetPrompt();
-                return;
-              }
-
-              // This remains very racy, ideally will want to chain these promises
-              // to keep the order of edits and to wait for all promises
-              let editPromise: Thenable<boolean> | undefined = undefined;
-              async function pipeChunkToEditor(chunk: any) {
-                if (chunk instanceof Buffer) {
-                  writeToEditor(chunk.toString("utf-8"));
-                } else {
-                  throw Error("Command produced unexpected output type");
-                }
-              }
-              async function writeToEditor(commandOutput: string) {
-                state = { kind: "WritingOutput" };
-
-                const end = getEnd(bashDocument);
-
-                // Chain edits to avoid output race conditions
-                const newEditPromise = editor.edit((builder) => {
-                  builder.insert(end, commandOutput);
-                });
-                // Somehow the chaining breaks things saying it cant edit an editor that is closed ?..
-                // if (editPromise) {
-                //   editPromise = editPromise.then((_) => newEditPromise);
-                // }
-                editPromise = newEditPromise;
-
-                const success = await editPromise;
-                assert(success, "Command output writing failed");
-
-                state = { kind: "InteractiveInput" };
-              }
-
-              // TODO: Depending on bash / lldb mode spawn or call in command.run('lldb...', command, args)
-              if (false) {
-                const { stdout, stderr } = spawn(comamnd, args, {
-                  shell: true,
-                  cwd: directory,
-                  stdio: ["pipe", "pipe", "pipe"],
-                });
-
-                stdout.addListener("data", pipeChunkToEditor);
-                stderr.addListener("data", pipeChunkToEditor);
-
-                stdout.addListener("close", async () => {
-                  if (editPromise) {
-                    await editPromise;
-                  }
-
-                  await resetPrompt();
-                });
-              } else {
-                const lldbCommand = [command, ...args].join(" ").trimEnd();
-                commands
-                  .executeCommand<string>(
-                    "fb-lldb.script-bridge.runLLDBCommandReturnResult",
-                    lldbCommand
-                  )
-                  .then(writeToEditor, (error) => console.log(error))
-                  .then((_) => resetPrompt());
-              }
-
-              break;
-            case "WritingOutput":
-              // Noop, just ignore updates
-              // Might race, can check what is the last thing we were writing
-              break;
-            case "InteractiveInput":
-            // Send to stdin
+          let [comamnd, ...args] = singleLineCommand.trimEnd().split(" ");
+          // Escape hatch for special commands like change directory.
+          // We handled those natively.
+          if (comamnd === "cd") {
+            changeDirectory(args);
+            resetPrompt();
+            return;
           }
 
-          revealTail();
-        }
-      );
+          if (comamnd === "") {
+            resetPrompt();
+            return;
+          }
 
-      context.subscriptions.push(textDocumentChangesDisposable);
+          // This remains very racy, ideally will want to chain these promises
+          // to keep the order of edits and to wait for all promises
+          let editPromise: Thenable<boolean> | undefined = undefined;
+          async function pipeChunkToEditor(chunk: any) {
+            if (chunk instanceof Buffer) {
+              writeToEditor(chunk.toString("utf-8"));
+            } else {
+              throw Error("Command produced unexpected output type");
+            }
+          }
+          async function writeToEditor(commandOutput: string) {
+            state = { kind: "WritingOutput" };
+
+            const end = getEnd(bashDocument);
+
+            // Chain edits to avoid output race conditions
+            const newEditPromise = editor.edit((builder) => {
+              builder.insert(end, commandOutput);
+            });
+            // Somehow the chaining breaks things saying it cant edit an editor that is closed ?..
+            // if (editPromise) {
+            //   editPromise = editPromise.then((_) => newEditPromise);
+            // }
+            editPromise = newEditPromise;
+
+            const success = await editPromise;
+            assert(success, "Command output writing failed");
+
+            state = { kind: "InteractiveInput" };
+          }
+
+          if (lldbMode) {
+            // This needs to run only once
+            if (!scriptBridgeConnected) {
+              commands.executeCommand<string>("fb-lldb.script-bridge.connect");
+              scriptBridgeConnected = true;
+            }
+
+            const lldbCommand = [command, ...args].join(" ").trimEnd();
+            commands
+              .executeCommand<string>(
+                "fb-lldb.script-bridge.runLLDBCommandReturnResult",
+                lldbCommand
+              )
+              .then(writeToEditor, (error) => console.log(error))
+              .then((_) => resetPrompt());
+          } else {
+            const { stdout, stderr } = spawn(comamnd, args, {
+              shell: true,
+              cwd: directory,
+              stdio: ["pipe", "pipe", "pipe"],
+            });
+
+            stdout.addListener("data", pipeChunkToEditor);
+            stderr.addListener("data", pipeChunkToEditor);
+
+            stdout.addListener("close", async () => {
+              if (editPromise) {
+                await editPromise;
+              }
+
+              await resetPrompt();
+            });
+          }
+
+          break;
+        case "WritingOutput":
+          // Noop, just ignore updates
+          // Might race, can check what is the last thing we were writing
+          break;
+        case "InteractiveInput":
+        // Send to stdin
+      }
+
+      revealTail();
     }
   );
 
-  context.subscriptions.push(disposable);
+  return textDocumentChangesDisposable;
+}
+
+export function activate(context: ExtensionContext) {
+  context.subscriptions.push(
+    commands.registerCommand("bash-editor.newBashEditor", () => run(false))
+  );
+
+  context.subscriptions.push(
+    commands.registerCommand("bash-editor.newLLDBEditor", () => run(true))
+  );
 
   if (env.NODE_ENV === "development") {
     setTimeout(
