@@ -94,26 +94,30 @@ async function run(lldbMode: boolean) {
     commandStartOffset: endOffset,
   };
 
-  async function resetPrompt(retries = 1) {
-    if (retries <= 0) {
-      return;
+  // Important! Used for all writes to output. Both prompt resetting & command outputs
+  // This remains very racy, ideally will want to chain these promises
+  // to keep the order of edits and to wait for all promises
+  let pendingWrite: string | undefined = undefined;
+  let editPromise: Thenable<boolean> | undefined = undefined;
+
+  async function resetPrompt() {
+    if (editPromise) {
+      await editPromise;
     }
 
     // This is not representative of what we're actually doing,
     // but is good enough because it will ignore editor updates.
     state = { kind: "WritingOutput" };
 
-    const success = await editor.edit((builder) => {
+    const newEditPromise = editor.edit((builder) => {
       const { start, end } = getRange(bashDocument);
       const startOnNewLine = !start.isEqual(end);
       builder.insert(end, (startOnNewLine ? "\n" : "") + getCurrentPrompt());
     });
-    revealTail();
 
-    assert(success, "Resetting comment prompt failed, retrying");
-    if (!success) {
-      setTimeout(() => resetPrompt(retries - 1));
-    }
+    editPromise = newEditPromise;
+    await editPromise;
+    revealTail();
 
     state = {
       kind: "ReadingCommand",
@@ -206,12 +210,9 @@ async function run(lldbMode: boolean) {
             return;
           }
 
-          // This remains very racy, ideally will want to chain these promises
-          // to keep the order of edits and to wait for all promises
-          let editPromise: Thenable<boolean> | undefined = undefined;
           async function pipeChunkToEditor(chunk: any) {
             if (chunk instanceof Buffer) {
-              writeToEditor(chunk.toString("utf-8"));
+              await writeToEditor(chunk.toString("utf-8"));
             } else {
               throw Error("Command produced unexpected output type");
             }
@@ -219,10 +220,26 @@ async function run(lldbMode: boolean) {
           async function writeToEditor(commandOutput: string) {
             state = { kind: "WritingOutput" };
 
+            // Ignoring control characters. https://stackoverflow.com/a/14693789
+            // This regular expression actually works, although it still does not fix bold manual pages highlights.
+            commandOutput = commandOutput.replace(
+              /(\x9B|\x1B\[)[0-?]*[ -\/]*[@-~]/gi,
+              ""
+            );
+
             const end = getEnd(bashDocument);
+
+            console.log(`Writing: ${commandOutput}`);
+            if (editPromise) {
+              console.log(
+                `Blocked writing ${commandOutput}, awaiting last write: ${pendingWrite}`
+              );
+              await editPromise;
+            }
 
             // Chain edits to avoid output race conditions
             const newEditPromise = editor.edit((builder) => {
+              console.log(`Command output: ${commandOutput}`);
               builder.insert(end, commandOutput);
             });
             // Somehow the chaining breaks things saying it cant edit an editor that is closed ?..
@@ -230,31 +247,47 @@ async function run(lldbMode: boolean) {
             //   editPromise = editPromise.then((_) => newEditPromise);
             // }
             editPromise = newEditPromise;
+            pendingWrite = commandOutput;
 
             const success = await editPromise;
-            assert(success, "Command output writing failed");
+            assert(
+              success,
+              `Command output writing failed. Output: ${commandOutput}`
+            );
+            if (success) {
+              console.log(
+                `Command output writing success. Output: ${commandOutput}`
+              );
+            }
 
             state = { kind: "InteractiveInput" };
           }
 
+          // For now we don't support lldb
           if (lldbMode) {
             // This needs to run only once
             if (!scriptBridgeConnected) {
-              commands.executeCommand<string>("fb-lldb.script-bridge.connect");
+              commands.executeCommand<string>("Connect  to lldb");
               scriptBridgeConnected = true;
             }
 
             const lldbCommand = [command, ...args].join(" ").trimEnd();
             commands
               .executeCommand<string>(
-                "fb-lldb.script-bridge.runLLDBCommandReturnResult",
+                "Run lldb command and return",
                 lldbCommand
               )
               .then(writeToEditor, (error) => console.log(error))
               .then((_) => resetPrompt());
           } else {
             const { stdout, stderr } = spawn(comamnd, args, {
-              shell: true,
+              shell: "/bin/sh",
+              // eslint-disable-next-line @typescript-eslint/naming-convention
+              // env: {
+              //   TERM: "xterm-mono",
+              //   PATH: env.PATH,
+              //   TERM_PROGRAM: "Apple_Terminal",
+              // },
               cwd: directory,
               stdio: ["pipe", "pipe", "pipe"],
             });
