@@ -56,8 +56,7 @@ type State = ReadingCommand | WritingOutput | InteractiveInput;
 
 async function run(lldbMode: boolean) {
   // Current directory and prompt
-  // TODO: Start with current file directory / workspace / homedir
-  let directory = homedir();
+  let directory = workspace.workspaceFolders?.[0].uri.path ?? homedir();
 
   function getCurrentPrompt(): string {
     return `${directory} 🛫 `;

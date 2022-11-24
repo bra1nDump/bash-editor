@@ -18,6 +18,8 @@ Bash Editor: Open new
 - No third party dependencies - vscode + node apis only
 - Keep the tail of the terminal always visible
 
+## Publishing
+
 ## To Do
 
 - Instead of creating my own shell, use an existing shell. Ideally it will provide filepath completions and things of that nature automatically. I found this cold one. brew install nushell
@@ -25,6 +27,12 @@ Bash Editor: Open new
   - Before jumping into this new shell, let's try to get the old set up working
   - Testing out the new shell should also be possible without changing how the extension works
   - Now that I can ship binary with the extension, I can use node-tty. It uses node-gyp under the hood.
+- lldb integration
+  - https://github.com/vadimcn/vscode-lldb
+  - Maybe send directly to debugger using vscode API :) ?
+  - Daaaamn I don't need lldb! This can work with any provider :D https://code.visualstudio.com/api/references/vscode-api#DebugSession:~:text=customRequest(command%3A%20string%2C%20args%3F%3A%20any)%3A%20Thenable%3Cany%3E
+  - #key Debug Adaptor Protocol, Vscode <-> lldb / other debuggers Damn. https://microsoft.github.io/debug-adapter-protocol/specification
+    - Request Evaluate is the custom request (see above) to send to debug adaptor https://microsoft.github.io/debug-adapter-protocol/specification#Requests_Evaluate
 
 ## Maybe todo? ;D
 
@@ -71,9 +79,17 @@ Potential solution:
 - Use terminal right function to pipe text into terminal
 - Get terminal buffer https://github.com/xtermjs/xterm.js/blob/master/typings/xterm-headless.d.ts#L1072
   - Hypotheses: I can get un formated string (or formated structured string ranges) and simply print to vscode (optionally include annotations)
-  - From buffer get all lines, from each line get string, hopefully plain (or worst case scenario get cell. This actually has information about bold, color etcetera) https://github.com/xtermjs/xterm.js/blob/4.14.1/typings/xterm.d.ts#LL1338-L1338C26
+- From buffer get all lines, from each line get string, hopefully plain (or worst case scenario get cell. This actually has information about bold, color etcetera) https://github.com/xtermjs/xterm.js/blob/4.14.1/typings/xterm.d.ts#LL1338-L1338C26
+- Once I have the current buffer, I can diff it with the previous buffer (should be synchronized with what vscode editor has starting from command output mark)
+- Simply override range
+  - This should support fancy commandline applications that update in line, for example loading bars
 
 Interactivity is still unsolved. Solving that by hand is definitely not great. Most likely I will still need to use xterm.js. Ideally I will subscribe to buffer change, or whatever event to be notified when application is asking for data (y/n), or input (for example arrow keys)
 
+This will also take care of actually handling the command sequences. For example clearing a line.
+Modifying algorithm outlined above
+
 The question is is at worth my time right now?
 Is tell a typewriter more important?)
+
+- This will allow support for nushell, single line commands are not interactive
