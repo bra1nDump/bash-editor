@@ -249,13 +249,19 @@ async function run(lldbMode: boolean) {
             pendingWrite = commandOutput;
 
             const success = await editPromise;
-            assert(
-              success,
-              `Command output writing failed. Output: ${commandOutput}`
-            );
+
+            // No matter if successful or not, stop blocking next right
+            editPromise = undefined;
+            pendingWrite = undefined;
+
             if (success) {
               console.log(
                 `Command output writing success. Output: ${commandOutput}`
+              );
+            } else {
+              // Todo: Learn how to rap cole consol log or other snippets around the string
+              console.error(
+                `Command output writing failed. Output: ${commandOutput}`
               );
             }
 

@@ -22,18 +22,6 @@ Bash Editor: Open new
 
 ## To Do
 
-- Instead of creating my own shell, use an existing shell. Ideally it will provide filepath completions and things of that nature automatically. I found this cold one. brew install nushell
-  - To get it to work I need to create a tty, send input to the tell a typewriter, interpreting output will be more difficult, as I will need to process special sequences. For example clearing the line, clearing the entire screen etc.
-  - Before jumping into this new shell, let's try to get the old set up working
-  - Testing out the new shell should also be possible without changing how the extension works
-  - Now that I can ship binary with the extension, I can use node-tty. It uses node-gyp under the hood.
-- lldb integration
-  - https://github.com/vadimcn/vscode-lldb
-  - Maybe send directly to debugger using vscode API :) ?
-  - Daaaamn I don't need lldb! This can work with any provider :D https://code.visualstudio.com/api/references/vscode-api#DebugSession:~:text=customRequest(command%3A%20string%2C%20args%3F%3A%20any)%3A%20Thenable%3Cany%3E
-  - #key Debug Adaptor Protocol, Vscode <-> lldb / other debuggers Damn. https://microsoft.github.io/debug-adapter-protocol/specification
-    - Request Evaluate is the custom request (see above) to send to debug adaptor https://microsoft.github.io/debug-adapter-protocol/specification#Requests_Evaluate
-
 ## Maybe todo? ;D
 
 🥼 - Effort units
@@ -52,6 +40,15 @@ Bash Editor: Open new
   - Other things like wrapping command that has ran in `backticks`
 - [🥼🥼 📈📈] Debugger integration
   - The reason I started this in the first place was because lldb was terrible to use from a small single line debugging input field. I can basically swap out `spawn` command with `commands.run('lldb-extension.runCommand')`, and similarly get three streams in return.
+  - Maybe send directly to debugger using vscode API :) ?
+  - Daaaamn I don't need lldb! This can work with any provider :D https://code.visualstudio.com/api/references/vscode-api#DebugSession:~:text=customRequest(command%3A%20string%2C%20args%3F%3A%20any)%3A%20Thenable%3Cany%3E
+  - #key Debug Adaptor Protocol, Vscode <-> lldb / other debuggers Damn. https://microsoft.github.io/debug-adapter-protocol/specification
+    - Request Evaluate is the custom request (see above) to send to debug adaptor https://microsoft.github.io/debug-adapter-protocol/specification#Requests_Evaluate
+- Instead of creating my own shell, use an existing shell. Ideally it will provide filepath completions and things of that nature automatically. I found this cold one. brew install nushell
+  - To get it to work I need to create a tty, send input to the tell a typewriter, interpreting output will be more difficult, as I will need to process special sequences. For example clearing the line, clearing the entire screen etc.
+  - Before jumping into this new shell, let's try to get the old set up working
+  - Testing out the new shell should also be possible without changing how the extension works
+  - Now that I can ship binary with the extension, I can use node-tty. It uses node-gyp under the hood.
 - [🥼🥼 📈📈] Refactor
   - Flatten the god function
   - Starting hard to read
