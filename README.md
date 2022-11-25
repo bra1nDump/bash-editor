@@ -37,6 +37,9 @@ It will ask for authentication token which you can get from azure here https://d
 🥼 - Effort units
 📈 - Impact
 
+- Bug, TextEditor#edit not possible on closed editors. Stops being able to write to editor on unfocus it seems
+  - TextEditor is closed/disposed??
+- Need to create temporary file every time. Instead save with a new extension like in-editor-terminal.md. If already in directory simply open the existing one. If opened by other means - start listingin to edits
 - [🥼🥼 📈📈📈] Autocomplete
   - Old commands (also does not append to bash history)
   - Directories
