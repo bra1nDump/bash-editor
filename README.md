@@ -1,28 +1,38 @@
-# bash-editor
+# In-editor terminal for VSCode
 
-In-editor terminal. Usual vscode editing workflow for using the terminal.
+Use a regular text tab in vscode as your terminal. Use the same extensions and shortcuts between your text editing and terminal usage.
 
-Inspired by Bashbook https://github.com/AndreasArvidsson/bashbook. Simplifies the experience further by going from notebook to a single editor for both user input and command output. Major drawback is losing interactivity, major upside is is of editing commands and working with output of previous commands.
+Inspired by [Bashbook](https://github.com/AndreasArvidsson/bashbook) which does roughly the same thing but instead uses a notebook view within vscode.
 
 ## Why?
 
-I use voice control to code half the time to relieve stress from my hands. It is possible due to talonvoice.com + cursorless.org vscode extension, the latter not being available within the terminal. This makes editing terminal commands painful for me.
+I use voice control to code half the time to relieve stress from my hands. It is possible due to talonvoice.com + cursorless.org which allows me to effectively move around in vscode editor. Unfortunately it is not available in terminal.
 
-## Try it - from command pallet run
+## How to use
 
-Bash Editor: Open new
+- Run it from command pallet `Bash Editor: Open new`
+- This will open a new tab, simply type any bash command for example `ls`
+- Press enter to run the command as in normal terminal
+- Command's output will be appended to the same editor
 
-## Implemented
+# Features and shortcomings
 
-- Run bash commands within a regular editor (tab) in vscode
 - No third party dependencies - vscode + node apis only
 - Keep the tail of the terminal always visible
+- Does not support interactivity yet (for example if the comment your running requires input)
+- Does not support colors yet (will attempt to strip down colors and other special symbols from command output)
+- Does not have autocomplete for paths, or anything else for that matter
+- Does not have history yet
+
+See Todo four things I'm considering to add.
 
 ## Publishing
 
-## To Do
+Publisher url https://marketplace.visualstudio.com/manage/publishers/bra1ndump
+Run `vsce publish` from the project root.
+It will ask for authentication token which you can get from azure here https://dev.azure.com/bra1ndump/_usersSettings/tokens. You can't access as the old one, just generate the new one (look at the scopes requested on the old one. Market Place > Manage).
 
-## Maybe todo? ;D
+## To Do
 
 🥼 - Effort units
 📈 - Impact
